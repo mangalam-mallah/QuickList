@@ -4,6 +4,7 @@ export default {
     expo : {
         name : "Quicklist",
         slug : "Shopping",
+        scheme : "myapp",
         extra : {
             firebaseApiKey : process.env.FIREBASE_API_KEY,
             firebaseAuthDomain : process.env.FIREBASE_AUTH_DOMAIN,

@@ -1,6 +1,18 @@
 import { useState, useEffect } from "react";
-import { View, Text, ActivityIndicator, TouchableOpacity, ScrollView } from "react-native";
-import { getDocs, collection, deleteDoc, doc } from "firebase/firestore";
+import {
+  View,
+  Text,
+  ActivityIndicator,
+  TouchableOpacity,
+  ScrollView,
+  StyleSheet,
+} from "react-native";
+import {
+  getDocs,
+  collection,
+  deleteDoc,
+  doc,
+} from "firebase/firestore";
 import { db } from "@/firebase/firebaseConfig";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { getWeek } from "date-fns";
@@ -12,32 +24,33 @@ type Item = {
   quantity: number;
   bought: boolean;
   createdAt: string;
-  deleted ?: boolean
+  deleted?: boolean;
 };
-export default function history() {
+
+export default function HistoryScreen() {
   const [historyItems, setHistoryItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
-  const [groupMode, setGroupMode] = useState<"month" | "week">("month")
+  const [groupMode, setGroupMode] = useState<"month" | "week">("month");
 
-  const groupItems = (historyItems : any[], mode : "week" | "month") => {
-    return historyItems.reduce((groups : any, item) => {
+  const groupItems = (historyItems: any[], mode: "week" | "month") => {
+    return historyItems.reduce((groups: any, item) => {
       const date = new Date(item.createdAt);
       let key = "";
-      if(mode == "week"){
-        const week = getWeek(date)
-        key = `Week ${week} - ${date.getFullYear()}`
-      } else if(mode == 'month'){
-        key = `${date.toLocaleString("default", { month : "long"})} ${date.getFullYear()}`
+      if (mode == "week") {
+        const week = getWeek(date);
+        key = `Week ${week} - ${date.getFullYear()}`;
+      } else if (mode == "month") {
+        key = `${date.toLocaleString("default", { month: "long" })} ${date.getFullYear()}`;
       }
 
-      if(!groups[key]) groups[key] = [];
+      if (!groups[key]) groups[key] = [];
       groups[key].push(item);
       return groups;
     }, {});
-  }
+  };
 
   const grouped = groupItems(historyItems, groupMode);
-  const sortedKeys = Object.keys(grouped).sort((a,b) => a.localeCompare(b));
+  const sortedKeys = Object.keys(grouped).sort((a, b) => a.localeCompare(b));
 
   useEffect(() => {
     const fetchHistory = async () => {
@@ -51,16 +64,13 @@ export default function history() {
             quantity: data.quantity,
             bought: data.bought,
             createdAt: data.createdAt
-              ? data.createdAt.toDate()
+              ? data.createdAt.toDate
                 ? data.createdAt.toDate().toISOString()
                 : data.createdAt
               : null,
           };
         });
-        items.sort(
-          (a, b) =>
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        );
+        items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
         setHistoryItems(items);
       } catch (error) {
         console.log("Error while fetching the history", error);
@@ -78,21 +88,21 @@ export default function history() {
         const currentMonth = now.getMonth();
         const previousMonth = currentMonth === 0 ? 11 : currentMonth - 1;
         const currentYear = now.getFullYear();
-  
+
         const lastCleanup = await AsyncStorage.getItem("lastCleanup");
         if (lastCleanup) {
           const lastCleanupDate = new Date(lastCleanup);
           const lastCleanupMonth = lastCleanupDate.getMonth();
           const lastCleanupYear = lastCleanupDate.getFullYear();
-  
+
           if (lastCleanupMonth === currentMonth && lastCleanupYear === currentYear) {
             console.log("Cleanup already done this month, skipping.");
             return;
           }
         }
-  
+
         console.log("Running monthly cleanup...");
-  
+
         const querySnapshot = await getDocs(collection(db, "groceryHistory"));
         querySnapshot.forEach(async (document) => {
           const data = document.data();
@@ -100,61 +110,65 @@ export default function history() {
             const itemDate = new Date(data.createdAt.toDate());
             const itemMonth = itemDate.getMonth();
             const itemYear = itemDate.getFullYear();
-  
+
             if (itemYear < currentYear || (itemYear === currentYear && itemMonth < previousMonth)) {
               await deleteDoc(doc(db, "groceryHistory", document.id));
               console.log(`Deleted item from ${itemDate}`);
             }
           }
         });
-  
+
         await AsyncStorage.setItem("lastCleanup", now.toISOString());
-  
+
         console.log("Monthly cleanup complete.");
       } catch (error) {
         console.error("Error deleting old history", error);
       }
     };
-  
+
     cleanupOldHistory();
   }, []);
-  
 
   return (
-    <View className="flex-1 bg-slate-50 p-4">
-      <Text className="text-2xl font-bold text-center text-slate-700 mb-4 mt-8">History</Text>
-  
-      <View className="flex-row justify-around space-x-4 mb-4">
+    <View style={styles.container}>
+      <Text style={styles.heading}>History</Text>
+
+      <View style={styles.buttonRow}>
         {/* <TouchableOpacity onPress={() => setGroupMode('week')}>
-          <Text className={groupMode === 'week' ? "font-bold text-purple-500" : ""}>Week</Text>
+          <Text style={groupMode === 'week' ? styles.selectedTab : styles.unselectedTab}>Week</Text>
         </TouchableOpacity> */}
-        <TouchableOpacity onPress={() => setGroupMode('month')}>
-          <Text className={groupMode === 'month' ? "font-bold text-purple-500" : ""}>Month</Text>
+        <TouchableOpacity onPress={() => setGroupMode("month")}>
+          <Text style={groupMode === "month" ? styles.selectedTab : styles.unselectedTab}>Month</Text>
         </TouchableOpacity>
       </View>
-  
-      {historyItems.length === 0 ? (
-        <View className="flex-1 justify-center items-center">
+
+      {loading ? (
+        <ActivityIndicator size="large" color="#6b7280" />
+      ) : historyItems.length === 0 ? (
+        <View style={styles.emptyContainer}>
           <MaterialCommunityIcons name="history" size={80} color="#cbd5e1" />
-          <Text className="text-lg font-medium text-slate-700 mt-4">No Items in History</Text>
+          <Text style={styles.emptyText}>No Items in History</Text>
         </View>
       ) : (
         <ScrollView>
           {sortedKeys.map((group) => (
-            <View key={group} className="mb-4">
-              <Text className="font-bold text-lg mb-2">{group}</Text>
+            <View key={group} style={styles.groupSection}>
+              <Text style={styles.groupHeading}>{group}</Text>
               {grouped[group].map((item: any) => (
-                <View key={item.id} className="bg-white p-4 mb-2 rounded-xl shadow">
-                  <Text style={{
-                    textDecorationLine: item.deleted ? "line-through" : "none",
-                    color: item.deleted ? "red" : "black",
-                    fontSize: 16,
-                    marginBottom: 4,
-                  }}>
+                <View key={item.id} style={styles.card}>
+                  <Text
+                    style={[
+                      styles.itemText,
+                      item.deleted && {
+                        textDecorationLine: "line-through",
+                        color: "red",
+                      },
+                    ]}
+                  >
                     {item.name} {item.deleted ? "(Deleted)" : ""}
                   </Text>
-                  <Text className="text-gray-500">Quantity : {item.quantity}</Text>
-                  <Text className="text-gray-400 text-xs">{new Date(item.createdAt).toLocaleString()}</Text>
+                  <Text style={styles.itemSub}>Quantity: {item.quantity}</Text>
+                  <Text style={styles.itemTime}>{new Date(item.createdAt).toLocaleString()}</Text>
                 </View>
               ))}
             </View>
@@ -164,3 +178,73 @@ export default function history() {
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#f8fafc", // slate-50
+    padding: 16,
+  },
+  heading: {
+    fontSize: 24,
+    fontWeight: "bold",
+    color: "#334155", // slate-700
+    textAlign: "center",
+    marginTop: 32,
+    marginBottom: 16,
+  },
+  buttonRow: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    marginBottom: 16,
+  },
+  selectedTab: {
+    fontWeight: "bold",
+    color: "#8b5cf6", // purple-500
+  },
+  unselectedTab: {
+    color: "#64748b", // slate-500 (optional)
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 48,
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: "500",
+    color: "#334155", // slate-700
+    marginTop: 16,
+  },
+  groupSection: {
+    marginBottom: 16,
+  },
+  groupHeading: {
+    fontWeight: "bold",
+    fontSize: 18,
+    marginBottom: 8,
+  },
+  card: {
+    backgroundColor: "white",
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 8,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  itemText: {
+    fontSize: 16,
+    marginBottom: 4,
+  },
+  itemSub: {
+    color: "#6b7280", // gray-500
+  },
+  itemTime: {
+    color: "#94a3b8", // gray-400
+    fontSize: 12,
+  },
+});

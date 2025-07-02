@@ -7,6 +7,7 @@ import {
   deleteDoc,
   updateDoc,
   onSnapshot,
+  arrayRemove,
 } from "firebase/firestore";
 import { useRouter } from "expo-router";
 import { Timestamp } from "firebase/firestore";
@@ -22,8 +23,11 @@ import {
   Animated,
   TouchableWithoutFeedback,
   StatusBar,
+  Button,
+  StyleSheet,
 } from "react-native";
 import { Feather, MaterialCommunityIcons, AntDesign } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 type Item = {
   id: string;
@@ -82,34 +86,45 @@ export default function HomeScreen() {
   }, [items.length]);
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(
-      collection(db, "groceryList"),
-      (snapshot) => {
-        const itemList = snapshot.docs
-          .map((doc) => {
+    const fetchGroupAndListen = async () => {
+      const groupCode = await AsyncStorage.getItem("groupCode");
+      if (!groupCode) return;
+
+      console.log("Using groupCode:", groupCode);
+
+      const unsubscribe = onSnapshot(
+        collection(db, `groups/${groupCode}/groceryList`),
+        (snapshot) => {
+          const itemList = snapshot.docs.map((doc) => {
             const data = doc.data();
+            console.log("Real-time update received", snapshot.size);
+            // console.log('Grocery updated', snapshot.docs)
+
             return {
               id: doc.id,
               name: data.name,
-              quantity: data.quantity || false,
+              quantity: data.quantity || 1,
               bought: data.bought,
-              createdAt: data.createdAt
-                ? data.createdAt.toDate
-                  ? data.createdAt.toDate().toISOString()
-                  : data.createdAt
-                : null,
+              createdAt: data.createdAt?.toDate
+                ? data.createdAt.toDate().toISOString()
+                : data.createdAt,
             };
-          })
-          .sort(
-            (a, b) =>
-              new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+          });
+
+          setItems(
+            itemList.sort(
+              (a, b) =>
+                new Date(a.createdAt).getTime() -
+                new Date(b.createdAt).getTime()
+            )
           );
+        }
+      );
 
-        setItems(itemList);
-      }
-    );
+      return () => unsubscribe();
+    };
 
-    return () => unsubscribe();
+    fetchGroupAndListen();
   }, []);
 
   const openModal = () => {
@@ -152,15 +167,18 @@ export default function HomeScreen() {
     const quant =
       newItemQuantity.trim() === "" ? 1 : parseInt(newItemQuantity, 10);
 
+    const groupCode = await AsyncStorage.getItem("groupCode");
+    if (!groupCode) return;
+
     try {
-      await addDoc(collection(db, "groceryList"), {
+      await addDoc(collection(db, `groups/${groupCode}/groceryList`), {
         name: newItemName,
         quantity: quant,
         bought: false,
         createdAt: Timestamp.now(),
       });
 
-      await addDoc(collection(db, "groceryHistory"), {
+      await addDoc(collection(db, `groups/${groupCode}/groceryHistory`), {
         name: newItemName,
         quantity: quant,
         bought: false,
@@ -178,11 +196,15 @@ export default function HomeScreen() {
   };
 
   const toggleBought = async (id: string) => {
-    const itemRef = doc(db, "groceryList", id);
+    const groupCode = await AsyncStorage.getItem("groupCode");
+    if (!groupCode) return;
+
+    const itemRef = doc(db, `groups/${groupCode}/groceryList`, id);
     const updatedItems = items.map((item) =>
       item.id === id ? { ...item, bought: !item.bought } : item
     );
     setItems(updatedItems);
+
     try {
       const item = items.find((item) => item.id === id);
       if (item) {
@@ -198,24 +220,30 @@ export default function HomeScreen() {
   const deleteItem = (id: string) => {
     const item = items.find((i) => i.id === id);
     if (!item) return;
+
     Alert.alert("Delete Item", "Are you sure you want to delete this?", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete",
         style: "destructive",
         onPress: async () => {
+          const groupCode = await AsyncStorage.getItem("groupCode");
+          if (!groupCode) return;
           try {
-            await deleteDoc(doc(db, "groceryList", id));
+            await deleteDoc(doc(db, `groups/${groupCode}/groceryList`, id));
             const querySnapshot = await getDocs(
-              collection(db, "groceryHistory")
+              collection(db, `groups/${groupCode}/groceryHistory`)
             );
 
             querySnapshot.forEach(async (docSnap) => {
               const data = docSnap.data();
               if (data.name === item.name && data.deleted === false) {
-                await updateDoc(doc(db, "groceryHistory", docSnap.id), {
-                  deleted: true,
-                });
+                await updateDoc(
+                  doc(db, `groups/${groupCode}/groceryHistory`, docSnap.id),
+                  {
+                    deleted: true,
+                  }
+                );
               }
             });
           } catch (error) {
@@ -250,37 +278,40 @@ export default function HomeScreen() {
         }}
       >
         <View
-          className={`mx-4 my-2 p-4 rounded-xl shadow ${
-            item.bought ? "bg-slate-200" : "bg-white"
-          }`}
+          style={[
+            styles.card,
+            item.bought ? styles.cardBought : styles.cardDefault,
+          ]}
         >
-          <View className="flex-row items-center">
+          <View style={styles.row}>
             <TouchableOpacity
               onPress={() => toggleBought(item.id)}
-              className={`w-6 h-6 rounded-full border-2 items-center justify-center mr-3 ${
-                item.bought ? "border-emerald-500" : "border-gray-300"
-              }`}
+              style={[
+                styles.checkCircle,
+                item.bought ? styles.borderBought : styles.borderDefault,
+              ]}
             >
               {item.bought && (
                 <Feather name="check" size={16} color="#10b981" />
               )}
             </TouchableOpacity>
 
-            <View className="flex-1">
+            <View style={styles.flex1}>
               <Text
-                className={`text-2xl font-semibold ${
-                  item.bought ? "text-gray-400 line-through" : "text-gray-800"
-                }`}
+                style={[
+                  styles.itemText,
+                  item.bought ? styles.itemTextBought : styles.itemTextDefault,
+                ]}
               >
                 {item.name}
               </Text>
-              <Text className="text-gray-500 ">Quantity: {item.quantity}</Text>
-              {/* <Text className="text-gray-400 text-xs">{formattedDate}</Text> */}
+              <Text style={styles.quantityText}>Quantity: {item.quantity}</Text>
+              {/* <Text style={styles.dateText}>{formattedDate}</Text> */}
             </View>
 
             <TouchableOpacity
               onPress={() => deleteItem(item.id)}
-              className="p-2"
+              style={styles.deleteBtn}
             >
               <Feather name="trash-2" size={20} color="#ef4444" />
             </TouchableOpacity>
@@ -290,66 +321,304 @@ export default function HomeScreen() {
     );
   };
 
+  const leaveGroup = async () => {
+    Alert.alert("Leave Group", "Are you sure you want to leave this group?", [
+      { text: "Cancel", style: "destructive" },
+      {
+        text: "Leave",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            const groupCode = await AsyncStorage.getItem("groupCode");
+            const deviceId = await AsyncStorage.getItem("deviceId");
+
+            if (groupCode && deviceId) {
+              const groupRef = doc(db, "groups", groupCode);
+              await updateDoc(groupRef, {
+                members: arrayRemove({ deviceId }),
+              });
+            }
+            await AsyncStorage.removeItem("groupCode");
+            router.replace("/groupScreen");
+          } catch (error) {
+            console.log("Error while leaving the group", error);
+          }
+        },
+      },
+    ]);
+  };
+
+  const styles = StyleSheet.create({
+    card: {
+      marginHorizontal: 16,
+      marginVertical: 8,
+      padding: 16,
+      borderRadius: 16,
+      shadowColor: "#000",
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+      shadowOffset: { width: 0, height: 2 },
+      elevation: 3,
+    },
+    cardBought: {
+      backgroundColor: "#e2e8f0", // slate-200
+    },
+    cardDefault: {
+      backgroundColor: "#ffffff",
+    },
+    row: {
+      flexDirection: "row",
+      alignItems: "center",
+    },
+    checkCircle: {
+      width: 24,
+      height: 24,
+      borderRadius: 12,
+      borderWidth: 2,
+      justifyContent: "center",
+      alignItems: "center",
+      marginRight: 12,
+    },
+    borderBought: {
+      borderColor: "#10b981", // emerald-500
+    },
+    borderDefault: {
+      borderColor: "#d1d5db", // gray-300
+    },
+    flex1: {
+      flex: 1,
+    },
+    itemText: {
+      fontSize: 20,
+      fontWeight: "600",
+    },
+    itemTextBought: {
+      color: "#9ca3af", // gray-400
+      textDecorationLine: "line-through",
+    },
+    itemTextDefault: {
+      color: "#1f2937", // gray-800
+    },
+    quantityText: {
+      color: "#6b7280", // gray-500
+    },
+    deleteBtn: {
+      padding: 8,
+    },
+
+    container: { flex: 1, backgroundColor: "#f8fafc" },
+    welcomeContainer: {
+      flex: 1,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    headerContainer: { paddingTop: 20, paddingBottom: 12 },
+    headerTitle: {
+      fontSize: 22,
+      fontWeight: "bold",
+      textAlign: "center",
+      color: "#334155",
+      marginTop: 20,
+      marginBottom: 8,
+    },
+    summaryRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      paddingHorizontal: 20,
+      marginTop: 12,
+    },
+    summaryItem: { flexDirection: "row", alignItems: "center" },
+    summaryText: {
+      marginLeft: 8,
+      fontSize: 16,
+      fontWeight: "500",
+      color: "#64748b",
+    },
+    listContainer: { flex: 1 },
+    emptyListContainer: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: 40,
+    },
+    emptyTitle: {
+      fontSize: 20,
+      fontWeight: "bold",
+      color: "#94a3b8",
+      textAlign: "center",
+      marginTop: 16,
+    },
+    emptySubtitle: {
+      fontSize: 16,
+      color: "#94a3b8",
+      textAlign: "center",
+      marginTop: 8,
+    },
+    fabRight: {
+      position: "absolute",
+      bottom: 30,
+      right: 30,
+    },
+    fabLeft: {
+      position: "absolute",
+      bottom: 30,
+      left: 30,
+    },
+    fabButton: {
+      width: 60,
+      height: 60,
+      borderRadius: 30,
+      backgroundColor: "#8b5cf6",
+      justifyContent: "center",
+      alignItems: "center",
+      shadowColor: "#8b5cf6",
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 4,
+      elevation: 6,
+    },
+    leaveButton: {
+      flexDirection: "row",
+      backgroundColor: "#ef4444",
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      borderRadius: 12,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    leaveButtonText: {
+      color: "#fff",
+      marginLeft: 8,
+      fontWeight: "600",
+    },
+    modalOverlay: {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: "rgba(0,0,0,0.5)",
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    modalContainer: {
+      width: "85%",
+      backgroundColor: "#fff",
+      padding: 24,
+      borderRadius: 20,
+    },
+    modalTitle: {
+      fontSize: 22,
+      fontWeight: "bold",
+      color: "#334155",
+      marginBottom: 20,
+    },
+    inputGroup: { marginBottom: 16 },
+    inputLabel: {
+      fontSize: 16,
+      fontWeight: "500",
+      marginBottom: 8,
+      color: "#64748b",
+    },
+    textInput: {
+      borderWidth: 1,
+      borderColor: "#e2e8f0",
+      borderRadius: 12,
+      padding: 16,
+      fontSize: 16,
+      backgroundColor: "#f1f5f9",
+    },
+    modalButtonRow: { flexDirection: "row", justifyContent: "space-between" },
+    cancelButton: {
+      flex: 1,
+      backgroundColor: "#f1f5f9",
+      paddingVertical: 16,
+      borderRadius: 12,
+      alignItems: "center",
+      marginRight: 8,
+    },
+    cancelButtonText: {
+      color: "#64748b",
+      fontWeight: "600",
+      fontSize: 16,
+    },
+    addButton: {
+      flex: 1,
+      backgroundColor: "#8b5cf6",
+      paddingVertical: 16,
+      borderRadius: 12,
+      alignItems: "center",
+      marginLeft: 8,
+    },
+    addButtonText: {
+      color: "#fff",
+      fontWeight: "600",
+      fontSize: 16,
+    },
+  });
+
   return (
-    <SafeAreaView className="flex-1 bg-slate-50">
+    <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#f8fafc" />
 
-      <View className="pt-5 pb-3">
-        <Text className="text-2xl font-bold text-center text-slate-700 mt-7 mb-2">
-          Lets make Shopping easy
-        </Text>
+      {/* <View style={styles.welcomeContainer}>
+        <Text>Welcome to Quiklist!</Text>
+        <Button
+          title="Go to Group Setup"
+          onPress={() => router.push("/groupScreen")}
+        />
+      </View> */}
 
-        <View className="flex-row items-center justify-between px-5 mt-4">
-          <View className="flex-row items-center">
+      <View style={styles.headerContainer}>
+        <Text style={styles.headerTitle}>Lets make Shopping easy</Text>
+        <View style={styles.summaryRow}>
+          <View style={styles.summaryItem}>
             <MaterialCommunityIcons
               name="cart-outline"
               size={24}
               color="#64748b"
             />
-            <Text className="ml-2 text-base font-medium text-slate-500">
+            <Text style={styles.summaryText}>
               {items.length} {items.length === 1 ? "item" : "items"}
             </Text>
           </View>
 
           <TouchableOpacity
             onPress={() => router.push("/history")}
-            className="flex-row items-center"
+            style={styles.summaryItem}
           >
             <MaterialCommunityIcons
               name="clock-outline"
               size={24}
               color="#64748b"
             />
-            <Text className="ml-2 text-base font-medium text-slate-500">
-              History
-            </Text>
+            <Text style={styles.summaryText}>History</Text>
           </TouchableOpacity>
 
-          <View className="flex-row items-center">
+          <View style={styles.summaryItem}>
             <MaterialCommunityIcons
               name="check-circle-outline"
               size={24}
               color="#64748b"
             />
-            <Text className="ml-2 text-base font-medium text-slate-500">
+            <Text style={styles.summaryText}>
               {items.filter((item) => item.bought).length} completed
             </Text>
           </View>
         </View>
       </View>
 
-      <View className="flex-1">
+      <View style={styles.listContainer}>
         {items.length === 0 ? (
-          <View className="flex-1 items-center justify-center px-10">
+          <View style={styles.emptyListContainer}>
             <MaterialCommunityIcons
               name="cart-outline"
               size={80}
               color="#cbd5e1"
             />
-            <Text className="text-xl font-bold text-slate-400 text-center mt-4">
-              Your shopping list is empty
-            </Text>
-            <Text className="text-base text-slate-400 text-center mt-2">
+            <Text style={styles.emptyTitle}>Your shopping list is empty</Text>
+            <Text style={styles.emptySubtitle}>
               Tap the + button to add items
             </Text>
           </View>
@@ -364,91 +633,65 @@ export default function HomeScreen() {
       </View>
 
       <Animated.View
-        style={{
-          position: "absolute",
-          bottom: 30,
-          right: 30,
-          transform: [{ scale: buttonAnim }],
-        }}
+        style={[styles.fabRight, { transform: [{ scale: buttonAnim }] }]}
       >
-        <TouchableOpacity
-          onPress={openModal}
-          className="w-15 h-15 rounded-full bg-purple-500 items-center justify-center shadow-lg shadow-purple-300"
-          style={{ width: 60, height: 60 }}
-        >
+        <TouchableOpacity onPress={openModal} style={styles.fabButton}>
           <AntDesign name="plus" size={30} color="#ffffff" />
+        </TouchableOpacity>
+      </Animated.View>
+
+      <Animated.View
+        style={[styles.fabLeft, { transform: [{ scale: buttonAnim }] }]}
+      >
+        <TouchableOpacity style={styles.leaveButton} onPress={leaveGroup}>
+          <AntDesign name="logout" size={20} color="#fff" />
+          <Text style={styles.leaveButtonText}>Leave Group</Text>
         </TouchableOpacity>
       </Animated.View>
 
       {modalVisible && (
         <TouchableWithoutFeedback onPress={closeModal}>
-          <Animated.View
-            style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              backgroundColor: "rgba(0,0,0,0.5)",
-              justifyContent: "center",
-              alignItems: "center",
-              opacity: fadeAnim,
-            }}
-            className="items-center justify-center"
-          >
+          <Animated.View style={[styles.modalOverlay, { opacity: fadeAnim }]}>
             <Animated.View
-              className="w-[85%] bg-white p-6 rounded-2xl"
-              style={{
-                transform: [{ scale: scaleAnim }],
-              }}
+              style={[
+                styles.modalContainer,
+                { transform: [{ scale: scaleAnim }] },
+              ]}
             >
-              <Text className="text-2xl font-bold mb-5 text-slate-700">
-                Add New Item
-              </Text>
+              <Text style={styles.modalTitle}>Add New Item</Text>
 
-              <View className="mb-4">
-                <Text className="text-base font-medium mb-2 text-slate-500">
-                  Item Name
-                </Text>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Item Name</Text>
                 <TextInput
                   ref={inputRef}
                   placeholder="e.g., Milk, Bread, Eggs"
                   value={newItemName}
                   onChangeText={setNewItemName}
-                  className="border border-slate-200 rounded-xl p-4 text-base bg-slate-50"
+                  style={styles.textInput}
                 />
               </View>
 
-              <View className="mb-6">
-                <Text className="text-base font-medium mb-2 text-slate-500">
-                  Quantity
-                </Text>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Quantity</Text>
                 <TextInput
                   placeholder="e.g., 1, 2, 3"
                   value={newItemQuantity}
                   onChangeText={setNewItemQuantity}
                   keyboardType="numeric"
-                  className="border border-slate-200 rounded-xl p-4 text-base bg-slate-50"
+                  style={styles.textInput}
                 />
               </View>
 
-              <View className="flex-row justify-between">
+              <View style={styles.modalButtonRow}>
                 <TouchableOpacity
                   onPress={closeModal}
-                  className="flex-1 bg-slate-100 py-4 rounded-xl items-center mr-2"
+                  style={styles.cancelButton}
                 >
-                  <Text className="text-slate-500 font-semibold text-base">
-                    Cancel
-                  </Text>
+                  <Text style={styles.cancelButtonText}>Cancel</Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity
-                  onPress={addItem}
-                  className="flex-1 bg-purple-500 py-4 rounded-xl items-center ml-2"
-                >
-                  <Text className="text-white font-semibold text-base">
-                    Add Item
-                  </Text>
+                <TouchableOpacity onPress={addItem} style={styles.addButton}>
+                  <Text style={styles.addButtonText}>Add Item</Text>
                 </TouchableOpacity>
               </View>
             </Animated.View>
