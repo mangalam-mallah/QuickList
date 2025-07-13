@@ -7,17 +7,13 @@ import {
   ScrollView,
   StyleSheet,
 } from "react-native";
-import {
-  getDocs,
-  collection,
-  deleteDoc,
-  doc,
-} from "firebase/firestore";
+import { getDocs, collection, deleteDoc, doc } from "firebase/firestore";
 import { db } from "@/firebase/firebaseConfig";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { getWeek } from "date-fns";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+// Type for individual item
 type Item = {
   id: string;
   name: string;
@@ -32,15 +28,18 @@ export default function HistoryScreen() {
   const [loading, setLoading] = useState(true);
   const [groupMode, setGroupMode] = useState<"month" | "week">("month");
 
-  const groupItems = (historyItems: any[], mode: "week" | "month") => {
-    return historyItems.reduce((groups: any, item) => {
+  // Group items by week or month
+  const groupItems = (items: any[], mode: "week" | "month") => {
+    return items.reduce((groups: any, item) => {
       const date = new Date(item.createdAt);
       let key = "";
-      if (mode == "week") {
+      if (mode === "week") {
         const week = getWeek(date);
         key = `Week ${week} - ${date.getFullYear()}`;
-      } else if (mode == "month") {
-        key = `${date.toLocaleString("default", { month: "long" })} ${date.getFullYear()}`;
+      } else {
+        key = `${date.toLocaleString("default", {
+          month: "long",
+        })} ${date.getFullYear()}`;
       }
 
       if (!groups[key]) groups[key] = [];
@@ -55,7 +54,12 @@ export default function HistoryScreen() {
   useEffect(() => {
     const fetchHistory = async () => {
       try {
-        const querySnapshots = await getDocs(collection(db, "groceryHistory"));
+        const groupCode = await AsyncStorage.getItem("groupCode");
+        if (!groupCode) return;
+
+        const querySnapshots = await getDocs(
+          collection(db, `groups/${groupCode}/groceryHistory`)
+        );
         const items = querySnapshots.docs.map((doc) => {
           const data = doc.data();
           return {
@@ -63,14 +67,17 @@ export default function HistoryScreen() {
             name: data.name,
             quantity: data.quantity,
             bought: data.bought,
-            createdAt: data.createdAt
-              ? data.createdAt.toDate
-                ? data.createdAt.toDate().toISOString()
-                : data.createdAt
-              : null,
+            deleted: data.deleted,
+            createdAt: data.createdAt?.toDate?.()
+              ? data.createdAt.toDate().toISOString()
+              : data.createdAt,
           };
         });
-        items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+        items.sort(
+          (a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
         setHistoryItems(items);
       } catch (error) {
         console.log("Error while fetching the history", error);
@@ -81,9 +88,13 @@ export default function HistoryScreen() {
     fetchHistory();
   }, []);
 
+  // Cleanup old history items (older than previous month)
   useEffect(() => {
     const cleanupOldHistory = async () => {
       try {
+        const groupCode = await AsyncStorage.getItem("groupCode");
+        if (!groupCode) return;
+
         const now = new Date();
         const currentMonth = now.getMonth();
         const previousMonth = currentMonth === 0 ? 11 : currentMonth - 1;
@@ -92,10 +103,10 @@ export default function HistoryScreen() {
         const lastCleanup = await AsyncStorage.getItem("lastCleanup");
         if (lastCleanup) {
           const lastCleanupDate = new Date(lastCleanup);
-          const lastCleanupMonth = lastCleanupDate.getMonth();
-          const lastCleanupYear = lastCleanupDate.getFullYear();
-
-          if (lastCleanupMonth === currentMonth && lastCleanupYear === currentYear) {
+          if (
+            lastCleanupDate.getMonth() === currentMonth &&
+            lastCleanupDate.getFullYear() === currentYear
+          ) {
             console.log("Cleanup already done this month, skipping.");
             return;
           }
@@ -103,7 +114,9 @@ export default function HistoryScreen() {
 
         console.log("Running monthly cleanup...");
 
-        const querySnapshot = await getDocs(collection(db, "groceryHistory"));
+        const querySnapshot = await getDocs(
+          collection(db, `groups/${groupCode}/groceryHistory`)
+        );
         querySnapshot.forEach(async (document) => {
           const data = document.data();
           if (data.createdAt) {
@@ -111,8 +124,13 @@ export default function HistoryScreen() {
             const itemMonth = itemDate.getMonth();
             const itemYear = itemDate.getFullYear();
 
-            if (itemYear < currentYear || (itemYear === currentYear && itemMonth < previousMonth)) {
-              await deleteDoc(doc(db, "groceryHistory", document.id));
+            if (
+              itemYear < currentYear ||
+              (itemYear === currentYear && itemMonth < previousMonth)
+            ) {
+              await deleteDoc(
+                doc(db, "groups", groupCode, "history", document.id)
+              );
               console.log(`Deleted item from ${itemDate}`);
             }
           }
@@ -138,7 +156,13 @@ export default function HistoryScreen() {
           <Text style={groupMode === 'week' ? styles.selectedTab : styles.unselectedTab}>Week</Text>
         </TouchableOpacity> */}
         <TouchableOpacity onPress={() => setGroupMode("month")}>
-          <Text style={groupMode === "month" ? styles.selectedTab : styles.unselectedTab}>Month</Text>
+          <Text
+            style={
+              groupMode === "month" ? styles.selectedTab : styles.unselectedTab
+            }
+          >
+            Month
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -168,7 +192,9 @@ export default function HistoryScreen() {
                     {item.name} {item.deleted ? "(Deleted)" : ""}
                   </Text>
                   <Text style={styles.itemSub}>Quantity: {item.quantity}</Text>
-                  <Text style={styles.itemTime}>{new Date(item.createdAt).toLocaleString()}</Text>
+                  <Text style={styles.itemTime}>
+                    {new Date(item.createdAt).toLocaleString()}
+                  </Text>
                 </View>
               ))}
             </View>
@@ -182,13 +208,13 @@ export default function HistoryScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f8fafc", // slate-50
+    backgroundColor: "#f8fafc",
     padding: 16,
   },
   heading: {
     fontSize: 24,
     fontWeight: "bold",
-    color: "#334155", // slate-700
+    color: "#334155",
     textAlign: "center",
     marginTop: 32,
     marginBottom: 16,
@@ -200,10 +226,10 @@ const styles = StyleSheet.create({
   },
   selectedTab: {
     fontWeight: "bold",
-    color: "#8b5cf6", // purple-500
+    color: "#8b5cf6",
   },
   unselectedTab: {
-    color: "#64748b", // slate-500 (optional)
+    color: "#64748b",
   },
   emptyContainer: {
     flex: 1,
@@ -214,7 +240,7 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 18,
     fontWeight: "500",
-    color: "#334155", // slate-700
+    color: "#334155",
     marginTop: 16,
   },
   groupSection: {
@@ -241,10 +267,10 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   itemSub: {
-    color: "#6b7280", // gray-500
+    color: "#6b7280",
   },
   itemTime: {
-    color: "#94a3b8", // gray-400
+    color: "#94a3b8",
     fontSize: 12,
   },
 });

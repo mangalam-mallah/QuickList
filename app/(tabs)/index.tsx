@@ -8,6 +8,7 @@ import {
   updateDoc,
   onSnapshot,
   arrayRemove,
+  getDoc,
 } from "firebase/firestore";
 import { useRouter } from "expo-router";
 import { Timestamp } from "firebase/firestore";
@@ -23,7 +24,6 @@ import {
   Animated,
   TouchableWithoutFeedback,
   StatusBar,
-  Button,
   StyleSheet,
 } from "react-native";
 import { Feather, MaterialCommunityIcons, AntDesign } from "@expo/vector-icons";
@@ -43,6 +43,7 @@ export default function HomeScreen() {
   const [modalVisible, setModalVisible] = useState<boolean>(false);
   const [newItemName, setNewItemName] = useState<string>("");
   const [newItemQuantity, setNewItemQuantity] = useState<string>("");
+  const [members, setMembers] = useState(0);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
@@ -97,7 +98,7 @@ export default function HomeScreen() {
         (snapshot) => {
           const itemList = snapshot.docs.map((doc) => {
             const data = doc.data();
-            console.log("Real-time update received", snapshot.size);
+            // console.log("Real-time update received", snapshot.size);
             // console.log('Grocery updated', snapshot.docs)
 
             return {
@@ -254,6 +255,41 @@ export default function HomeScreen() {
     ]);
   };
 
+  const groupMembersCount = async (groupCode: string) => {
+    const groupRef = doc(db, "groups", groupCode);
+    const groupSnap = await getDoc(groupRef);
+
+    if (!groupSnap.exists()) {
+      console.error("Group does not exist");
+    }
+
+    const data = groupSnap.data();
+    const memberList = data?.members || [];
+    // console.log("Members: ", members.length)
+    setMembers(memberList.length);
+    return memberList.length;
+  };
+
+  useEffect(() => {
+    const fetchGroupCount = async () => {
+      const groupCode = await AsyncStorage.getItem("groupCode");
+      if (!groupCode) return;
+      const count = await groupMembersCount(groupCode);
+      console.log("Members:", count);
+    };
+    fetchGroupCount();
+  }, []);
+
+  useEffect(() => {
+    const checkScreen = async () => {
+      const groupCode = await AsyncStorage.getItem('groupCode')
+      if(!groupCode){
+        router.replace("/groupScreen")
+      }
+    }
+    checkScreen();  
+  }, [])
+
   const renderItem = ({ item, index }: { item: Item; index: number }) => {
     const itemAnim = itemAnimations.current[index] || new Animated.Value(1);
 
@@ -292,7 +328,7 @@ export default function HomeScreen() {
               ]}
             >
               {item.bought && (
-                <Feather name="check" size={16} color="#10b981" />
+                <Feather name="check" size={16} color="#22C55E" />
               )}
             </TouchableOpacity>
 
@@ -313,7 +349,7 @@ export default function HomeScreen() {
               onPress={() => deleteItem(item.id)}
               style={styles.deleteBtn}
             >
-              <Feather name="trash-2" size={20} color="#ef4444" />
+              <Feather name="trash-2" size={20} color="#EF4444" />
             </TouchableOpacity>
           </View>
         </View>
@@ -361,7 +397,7 @@ export default function HomeScreen() {
       elevation: 3,
     },
     cardBought: {
-      backgroundColor: "#e2e8f0", // slate-200
+      backgroundColor: "#F0FDF4", // Light green background for bought items
     },
     cardDefault: {
       backgroundColor: "#ffffff",
@@ -380,10 +416,11 @@ export default function HomeScreen() {
       marginRight: 12,
     },
     borderBought: {
-      borderColor: "#10b981", // emerald-500
+      borderColor: "#22C55E", // Green-500 for checked items
+      backgroundColor: "#DCFCE7", // Light green background
     },
     borderDefault: {
-      borderColor: "#d1d5db", // gray-300
+      borderColor: "#D1D5DB", // Gray-300
     },
     flex1: {
       flex: 1,
@@ -393,33 +430,49 @@ export default function HomeScreen() {
       fontWeight: "600",
     },
     itemTextBought: {
-      color: "#9ca3af", // gray-400
+      color: "#16A34A", // Green-600 for bought items
       textDecorationLine: "line-through",
     },
     itemTextDefault: {
-      color: "#1f2937", // gray-800
+      color: "#1F2937", // Gray-800
     },
     quantityText: {
-      color: "#6b7280", // gray-500
+      color: "#6B7280", // Gray-500
     },
     deleteBtn: {
       padding: 8,
+      borderRadius: 8,
+      backgroundColor: "#FEF2F2", // Light red background
     },
 
-    container: { flex: 1, backgroundColor: "#f8fafc" },
+    container: { 
+      flex: 1, 
+      backgroundColor: "#F8FAFC" // Light gray background
+    },
     welcomeContainer: {
       flex: 1,
       justifyContent: "center",
       alignItems: "center",
     },
-    headerContainer: { paddingTop: 20, paddingBottom: 12 },
+    headerContainer: { 
+      paddingTop: 20, 
+      paddingBottom: 12,
+      backgroundColor: "#FFFFFF",
+      borderBottomLeftRadius: 24,
+      borderBottomRightRadius: 24,
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+      elevation: 3,
+    },
     headerTitle: {
-      fontSize: 22,
+      fontSize: 24,
       fontWeight: "bold",
       textAlign: "center",
-      color: "#334155",
+      color: "#1E293B", // Slate-800
       marginTop: 20,
-      marginBottom: 8,
+      marginBottom: 16,
     },
     summaryRow: {
       flexDirection: "row",
@@ -428,14 +481,24 @@ export default function HomeScreen() {
       paddingHorizontal: 20,
       marginTop: 12,
     },
-    summaryItem: { flexDirection: "row", alignItems: "center" },
+    summaryItem: { 
+      flexDirection: "row", 
+      alignItems: "center",
+      backgroundColor: "#F1F5F9", // Light slate background
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 12,
+    },
     summaryText: {
       marginLeft: 8,
-      fontSize: 16,
-      fontWeight: "500",
-      color: "#64748b",
+      fontSize: 14,
+      fontWeight: "600",
+      color: "#475569", // Slate-600
     },
-    listContainer: { flex: 1 },
+    listContainer: { 
+      flex: 1,
+      marginTop: 8,
+    },
     emptyListContainer: {
       flex: 1,
       alignItems: "center",
@@ -445,13 +508,13 @@ export default function HomeScreen() {
     emptyTitle: {
       fontSize: 20,
       fontWeight: "bold",
-      color: "#94a3b8",
+      color: "#94A3B8", // Slate-400
       textAlign: "center",
       marginTop: 16,
     },
     emptySubtitle: {
       fontSize: 16,
-      color: "#94a3b8",
+      color: "#94A3B8",
       textAlign: "center",
       marginTop: 8,
     },
@@ -466,31 +529,36 @@ export default function HomeScreen() {
       left: 30,
     },
     fabButton: {
-      width: 60,
-      height: 60,
-      borderRadius: 30,
-      backgroundColor: "#8b5cf6",
+      width: 64,
+      height: 64,
+      borderRadius: 32,
+      backgroundColor: "#6366F1", // Indigo-500 - Modern purple-blue
       justifyContent: "center",
       alignItems: "center",
-      shadowColor: "#8b5cf6",
-      shadowOffset: { width: 0, height: 4 },
+      shadowColor: "#6366F1",
+      shadowOffset: { width: 0, height: 8 },
       shadowOpacity: 0.3,
-      shadowRadius: 4,
-      elevation: 6,
+      shadowRadius: 12,
+      elevation: 8,
     },
     leaveButton: {
-      flexDirection: "row",
-      backgroundColor: "#ef4444",
-      paddingHorizontal: 16,
-      paddingVertical: 12,
+      backgroundColor: "#EF4444", // Red-500
       borderRadius: 12,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
       justifyContent: "center",
       alignItems: "center",
+      shadowColor: "#EF4444",
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.2,
+      shadowRadius: 4,
+      elevation: 3,
     },
     leaveButtonText: {
-      color: "#fff",
+      color: "#FFFFFF",
       marginLeft: 8,
       fontWeight: "600",
+      fontSize: 12,
     },
     modalOverlay: {
       position: "absolute",
@@ -498,86 +566,115 @@ export default function HomeScreen() {
       left: 0,
       right: 0,
       bottom: 0,
-      backgroundColor: "rgba(0,0,0,0.5)",
+      backgroundColor: "rgba(0,0,0,0.6)",
       justifyContent: "center",
       alignItems: "center",
     },
     modalContainer: {
-      width: "85%",
-      backgroundColor: "#fff",
-      padding: 24,
-      borderRadius: 20,
+      width: "90%",
+      backgroundColor: "#FFFFFF",
+      padding: 28,
+      borderRadius: 24,
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 10 },
+      shadowOpacity: 0.25,
+      shadowRadius: 20,
+      elevation: 10,
     },
     modalTitle: {
-      fontSize: 22,
+      fontSize: 24,
       fontWeight: "bold",
-      color: "#334155",
-      marginBottom: 20,
+      color: "#1E293B", // Slate-800
+      marginBottom: 24,
+      textAlign: "center",
     },
-    inputGroup: { marginBottom: 16 },
+    inputGroup: { 
+      marginBottom: 20 
+    },
     inputLabel: {
       fontSize: 16,
-      fontWeight: "500",
+      fontWeight: "600",
       marginBottom: 8,
-      color: "#64748b",
+      color: "#374151", // Gray-700
     },
     textInput: {
-      borderWidth: 1,
-      borderColor: "#e2e8f0",
-      borderRadius: 12,
+      borderWidth: 2,
+      borderColor: "#E5E7EB", // Gray-200
+      borderRadius: 16,
       padding: 16,
       fontSize: 16,
-      backgroundColor: "#f1f5f9",
+      backgroundColor: "#F9FAFB", // Gray-50
+      color: "#111827", // Gray-900
     },
-    modalButtonRow: { flexDirection: "row", justifyContent: "space-between" },
+    modalButtonRow: { 
+      flexDirection: "row", 
+      justifyContent: "space-between",
+      gap: 12,
+    },
     cancelButton: {
       flex: 1,
-      backgroundColor: "#f1f5f9",
+      backgroundColor: "#F3F4F6", // Gray-100
       paddingVertical: 16,
-      borderRadius: 12,
+      borderRadius: 16,
       alignItems: "center",
-      marginRight: 8,
+      borderWidth: 2,
+      borderColor: "#E5E7EB", // Gray-200
     },
     cancelButtonText: {
-      color: "#64748b",
+      color: "#6B7280", // Gray-500
       fontWeight: "600",
       fontSize: 16,
     },
     addButton: {
       flex: 1,
-      backgroundColor: "#8b5cf6",
+      backgroundColor: "#10B981", 
       paddingVertical: 16,
-      borderRadius: 12,
+      borderRadius: 16,
       alignItems: "center",
-      marginLeft: 8,
+      shadowColor: "#10B981",
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+      elevation: 6,
     },
     addButtonText: {
-      color: "#fff",
-      fontWeight: "600",
+      color: "#FFFFFF",
+      fontWeight: "700",
       fontSize: 16,
+    },
+    membersText: {
+      color: "#FFFFFF",
+      fontSize: 14,
+      fontWeight: "700",
+    },
+    membersContainer: {
+      backgroundColor: "#F59E0B", 
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+      borderRadius: 20,
+      alignSelf: "flex-start",
+      shadowColor: "#F59E0B",
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+      elevation: 6,
+      flexDirection: "row",
+      alignItems: "center",
     },
   });
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#f8fafc" />
-
-      {/* <View style={styles.welcomeContainer}>
-        <Text>Welcome to Quiklist!</Text>
-        <Button
-          title="Go to Group Setup"
-          onPress={() => router.push("/groupScreen")}
-        />
-      </View> */}
+      <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
 
       <View style={styles.headerContainer}>
-        <Text style={styles.headerTitle}>Lets make Shopping easy</Text>
+        <Text style={styles.headerTitle}>Let's make Shopping easy! 🛒</Text>
         <View style={styles.summaryRow}>
           <View style={styles.summaryItem}>
             <MaterialCommunityIcons
               name="cart-outline"
-              size={24}
-              color="#64748b"
+              size={20}
+              color="#6366F1"
             />
             <Text style={styles.summaryText}>
               {items.length} {items.length === 1 ? "item" : "items"}
@@ -590,8 +687,8 @@ export default function HomeScreen() {
           >
             <MaterialCommunityIcons
               name="clock-outline"
-              size={24}
-              color="#64748b"
+              size={20}
+              color="#8B5CF6"
             />
             <Text style={styles.summaryText}>History</Text>
           </TouchableOpacity>
@@ -599,13 +696,20 @@ export default function HomeScreen() {
           <View style={styles.summaryItem}>
             <MaterialCommunityIcons
               name="check-circle-outline"
-              size={24}
-              color="#64748b"
+              size={20}
+              color="#22C55E"
             />
             <Text style={styles.summaryText}>
-              {items.filter((item) => item.bought).length} completed
+              {items.filter((item) => item.bought).length} done
             </Text>
           </View>
+          
+          <TouchableOpacity
+            style={styles.leaveButton}
+            onPress={leaveGroup}
+          >
+            <AntDesign name="logout" size={14} color="#FFFFFF" />
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -615,7 +719,7 @@ export default function HomeScreen() {
             <MaterialCommunityIcons
               name="cart-outline"
               size={80}
-              color="#cbd5e1"
+              color="#CBD5E1"
             />
             <Text style={styles.emptyTitle}>Your shopping list is empty</Text>
             <Text style={styles.emptySubtitle}>
@@ -636,17 +740,21 @@ export default function HomeScreen() {
         style={[styles.fabRight, { transform: [{ scale: buttonAnim }] }]}
       >
         <TouchableOpacity onPress={openModal} style={styles.fabButton}>
-          <AntDesign name="plus" size={30} color="#ffffff" />
+          <AntDesign name="plus" size={28} color="#FFFFFF" />
         </TouchableOpacity>
       </Animated.View>
 
       <Animated.View
         style={[styles.fabLeft, { transform: [{ scale: buttonAnim }] }]}
       >
-        <TouchableOpacity style={styles.leaveButton} onPress={leaveGroup}>
-          <AntDesign name="logout" size={20} color="#fff" />
-          <Text style={styles.leaveButtonText}>Leave Group</Text>
-        </TouchableOpacity>
+        <View style={styles.membersContainer}>
+          <MaterialCommunityIcons
+            name="account-group"
+            size={16}
+            color="#FFFFFF"
+          />
+          <Text style={styles.membersText}>  {members}</Text>
+        </View>
       </Animated.View>
 
       {modalVisible && (
@@ -658,7 +766,7 @@ export default function HomeScreen() {
                 { transform: [{ scale: scaleAnim }] },
               ]}
             >
-              <Text style={styles.modalTitle}>Add New Item</Text>
+              <Text style={styles.modalTitle}>Add New Item ✨</Text>
 
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Item Name</Text>

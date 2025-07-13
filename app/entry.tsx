@@ -1,5 +1,4 @@
-// app/entry.tsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -16,13 +15,16 @@ export default function EntryScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [firstTime, setFirstTime] = useState(false);
-  const fadeAnim = new Animated.Value(0);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     const checkFirstTime = async () => {
       const seen = await AsyncStorage.getItem("hasSeenIntro");
       const groupCode = await AsyncStorage.getItem("groupCode");
 
+      console.log("Group Code:", groupCode)
+      console.log("Has seen intro: ",seen);
+      
       if (groupCode) {
         router.replace("/");
       } else if (seen) {
